@@ -121,9 +121,12 @@ impl Block {
             lines.push(format!("'{arg}': {arg},"));
         }
         lines.push("}}},".to_string());
-        for (arg_name, attr) in &self.attributes {
-            lines.push(attr.to_jsonnet(arg_name, resource_type, name));
-        }
+        self.attributes
+            .iter()
+            .filter(|(_, attr)| !attr.computed.unwrap_or(false))
+            .for_each(|(arg_name, attr)| {
+                lines.push(attr.to_jsonnet(arg_name, resource_type, name));
+            });
         lines.push("},".to_string());
         lines.push("}".to_string());
         lines.join("\n")
