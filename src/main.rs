@@ -1,12 +1,13 @@
 use clap::Parser;
 use std::{
     collections::HashMap,
-    fmt::format,
     fs::{self, File, create_dir_all},
     io::Write,
     path::Path,
     process::Command,
 };
+use terraform_wrapper::{Terraform, TerraformCommand, prelude::ProvidersCommand};
+use which::which;
 
 use anyhow::Result;
 use convert_case::{Case, Casing};
@@ -102,7 +103,6 @@ fn wrap_tf_type_named(
 
 impl Block {
     fn to_jsonnet(&self, name: &str, resource_type: &str) -> String {
-        // TODO: Docstring
         let mut lines = vec![];
         let mut args = vec!["terraformName".to_string()];
         let required: Vec<String> = self
@@ -204,12 +204,36 @@ struct Args {
     /// Name of the person to greet
     #[arg(short, long, default_value = "out")]
     out_dir: String,
+
+    #[arg(short, long, default_value = "tofu")]
+    binary: String,
+
+    #[arg(short, long)]
+    input_schema: Option<String>,
+
+    #[arg(short, long, default_value = ".")]
+    tf_dir: String,
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
-    let json = fs::read_to_string("provider-schema.json")?;
-    let schemas: ProviderSchemas = serde_json::from_str(&json)?;
+
+    let schemas: ProviderSchemas = if let Some(input_schema) = args.input_schema {
+        let json = fs::read_to_string(input_schema)?;
+        serde_json::from_str(&json)?
+    } else {
+        let tf_builder = Terraform::builder()
+            .binary(which(args.binary)?)
+            .working_dir(args.tf_dir)
+            .build()?;
+        let res = ProvidersCommand::schema()
+            .arg("-json")
+            .execute(&tf_builder)
+            .await?;
+        serde_json::from_str(&res.to_string())?
+    };
+
     let out_dir = Path::new(&args.out_dir);
     for (provider_name, schema) in &schemas.provider_schemas {
         let provider_name = provider_name.rsplit_once("/").unwrap().1;
@@ -230,5 +254,6 @@ fn main() -> Result<()> {
         write_import_file(provider_dir).unwrap();
     }
     write_import_file(out_dir).unwrap();
+
     Ok(())
 }
