@@ -113,21 +113,29 @@ impl Block {
             .collect();
         args.extend(required.clone());
         lines.push("{".to_string());
-        lines.push(format!("new({}):: {{", args.join(", ")));
+        lines.push(format!(
+            "new({}):: self.functions(terraformName) {{",
+            args.join(", ")
+        ));
         lines.push("_type:: 'tf',".to_string());
         lines.push(format!("{resource_type}+: {{"));
         lines.push(format!("{name}+: {{ [terraformName]+: {{"));
         for arg in required {
             lines.push(format!("'{arg}': {arg},"));
         }
-        lines.push("}}},".to_string());
-        self.attributes
-            .iter()
-            .filter(|(_, attr)| !attr.computed.unwrap_or(false))
-            .for_each(|(arg_name, attr)| {
-                lines.push(attr.to_jsonnet(arg_name, resource_type, name));
-            });
         lines.push("},".to_string());
+        lines.push("}}},".to_string());
+        {
+            lines.push("functions(terraformName):: {".to_string());
+            self.attributes
+                .iter()
+                .filter(|(_, attr)| !attr.computed.unwrap_or(false))
+                .for_each(|(arg_name, attr)| {
+                    lines.push(attr.to_jsonnet(arg_name, resource_type, name));
+                });
+            lines.push("},".to_string());
+        }
+
         lines.push("}".to_string());
         lines.join("\n")
     }
