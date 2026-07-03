@@ -155,7 +155,9 @@ impl Block {
                     if !attr.description.clone().unwrap_or_default().is_empty() {
                         lines.push(attr.to_doc(arg_name));
                     }
-                    lines.push(format!("'{arg_name}'():: refSelf.plain('.{arg_name}'),"));
+                    lines.push(format!(
+                        "'{arg_name}'(suffix=''):: refSelf.plain('.{arg_name}%s' % suffix),"
+                    ));
                 });
                 lines.push("},".to_string());
             }
