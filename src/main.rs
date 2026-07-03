@@ -1,4 +1,5 @@
 use clap::Parser;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     collections::HashMap,
     fs::{self, File, create_dir_all},
@@ -235,24 +236,27 @@ async fn main() -> Result<()> {
     };
 
     let out_dir = Path::new(&args.out_dir);
-    for (provider_name, schema) in &schemas.provider_schemas {
-        let provider_name = provider_name.rsplit_once("/").unwrap().1;
-        let provider_dir = out_dir.join(provider_name);
-        schema
-            .data_source_schemas
-            .iter()
-            .for_each(|(name, schema)| {
-                let dirname = provider_dir.join("data");
-                write_jsonnet(&dirname, name, &schema.block.to_jsonnet(name, "data"));
+    schemas
+        .provider_schemas
+        .par_iter()
+        .for_each(|(provider_name, schema)| {
+            let provider_name = provider_name.rsplit_once("/").unwrap().1;
+            let provider_dir = out_dir.join(provider_name);
+            schema
+                .data_source_schemas
+                .iter()
+                .for_each(|(name, schema)| {
+                    let dirname = provider_dir.join("data");
+                    write_jsonnet(&dirname, name, &schema.block.to_jsonnet(name, "data"));
+                    write_import_file(dirname).unwrap();
+                });
+            schema.resource_schemas.iter().for_each(|(name, schema)| {
+                let dirname = provider_dir.join("resource");
+                write_jsonnet(&dirname, name, &schema.block.to_jsonnet(name, "resource"));
                 write_import_file(dirname).unwrap();
             });
-        schema.resource_schemas.iter().for_each(|(name, schema)| {
-            let dirname = provider_dir.join("resource");
-            write_jsonnet(&dirname, name, &schema.block.to_jsonnet(name, "resource"));
-            write_import_file(dirname).unwrap();
+            write_import_file(provider_dir).unwrap();
         });
-        write_import_file(provider_dir).unwrap();
-    }
     write_import_file(out_dir).unwrap();
 
     Ok(())
