@@ -127,12 +127,41 @@ impl Block {
         lines.push("}}},".to_string());
         {
             lines.push("functions(terraformName):: {".to_string());
+
             self.attributes
                 .iter()
                 .filter(|(_, attr)| !attr.computed.unwrap_or(false))
                 .for_each(|(arg_name, attr)| {
                     lines.push(attr.to_jsonnet(arg_name, resource_type, name));
                 });
+            lines.push("},".to_string());
+        }
+        {
+            lines.push("ref(terraformName):: {".to_string());
+            let prefix = match resource_type {
+                "data" => "data.",
+                _ => "",
+            };
+
+            lines.push("local refSelf = self,".to_string());
+            lines.push(format!(
+                "plain(suffix=''):: '${{ {}{}.%s%s }}' % [terraformName, suffix],",
+                prefix, name
+            ));
+            {
+                lines.push("fields:: {".to_string());
+                self.attributes
+                    .iter()
+                    .filter(|(_, attr)| attr.computed.unwrap_or(false))
+                    .for_each(|(arg_name, attr)| {
+                        if !attr.description.clone().unwrap_or_default().is_empty() {
+                            lines.push(attr.to_doc(arg_name));
+                        }
+                        lines.push(format!("'{arg_name}'():: refSelf.plain('.{arg_name}'),"));
+                    });
+                lines.push("},".to_string());
+            }
+
             lines.push("},".to_string());
         }
 
