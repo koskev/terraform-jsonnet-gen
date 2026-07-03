@@ -1,6 +1,7 @@
 use clap::Parser;
 use std::{
     collections::HashMap,
+    fmt::format,
     fs::{self, File, create_dir_all},
     io::Write,
     path::Path,
@@ -132,10 +133,20 @@ impl Attribute {
     fn to_jsonnet(&self, name: &str, resource_type: &str, tf_name: &str) -> String {
         let mut lines = vec![];
         let func_name = format!("with_{name}").to_case(Case::Camel);
+        if !self.description.clone().unwrap_or_default().is_empty() {
+            lines.push(self.to_doc(&func_name));
+        }
         lines.push(format!("{func_name}(value):: self {{"));
         lines.push(wrap_tf_type(name, resource_type, tf_name));
         lines.push("},".to_string());
         lines.join("\n")
+    }
+
+    fn to_doc(&self, name: &str) -> String {
+        format!(
+            "'#{name}': {{ 'function': {{ help: |||\n {} \n||| }} }},",
+            self.description.clone().unwrap_or_default()
+        )
     }
 }
 
@@ -147,9 +158,14 @@ fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) {
     file.write_all(value.as_bytes()).unwrap();
     Command::new("jsonnetfmt")
         .arg("-i")
-        .arg(filename)
+        .arg(&filename)
         .output()
-        .unwrap();
+        .unwrap_or_else(|_| {
+            panic!(
+                "Running fmt on file {}",
+                filename.to_str().unwrap_or_default()
+            )
+        });
 }
 
 fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {

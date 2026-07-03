@@ -14,6 +14,7 @@ _: {
             clippy
             rustfmt
             pkg-config
+            go-jsonnet
           ];
           buildInputs = with pkgs; [
             clang
