@@ -130,7 +130,7 @@ impl Block {
 
             self.attributes
                 .iter()
-                .filter(|(_, attr)| !attr.computed.unwrap_or(false))
+                .filter(|(_, attr)| attr.is_argument())
                 .for_each(|(arg_name, attr)| {
                     lines.push(attr.to_jsonnet(arg_name, resource_type, name));
                 });
@@ -152,7 +152,7 @@ impl Block {
                 lines.push("fields:: {".to_string());
                 self.attributes
                     .iter()
-                    .filter(|(_, attr)| attr.computed.unwrap_or(false))
+                    .filter(|(_, attr)| !attr.is_argument())
                     .for_each(|(arg_name, attr)| {
                         if !attr.description.clone().unwrap_or_default().is_empty() {
                             lines.push(attr.to_doc(arg_name));
@@ -188,6 +188,10 @@ impl Attribute {
             "'#{name}':: {{ 'function': {{ help: |||\n {} \n||| }} }},",
             self.description.clone().unwrap_or_default()
         )
+    }
+
+    fn is_argument(&self) -> bool {
+        self.optional.unwrap_or(false) || self.required.unwrap_or(false)
     }
 }
 
