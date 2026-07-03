@@ -242,19 +242,23 @@ async fn main() -> Result<()> {
         .for_each(|(provider_name, schema)| {
             let provider_name = provider_name.rsplit_once("/").unwrap().1;
             let provider_dir = out_dir.join(provider_name);
+            let data_dirname = provider_dir.join("data");
+            let resource_dirname = provider_dir.join("resource");
             schema
                 .data_source_schemas
                 .iter()
                 .for_each(|(name, schema)| {
-                    let dirname = provider_dir.join("data");
-                    write_jsonnet(&dirname, name, &schema.block.to_jsonnet(name, "data"));
-                    write_import_file(dirname).unwrap();
+                    write_jsonnet(&data_dirname, name, &schema.block.to_jsonnet(name, "data"));
                 });
             schema.resource_schemas.iter().for_each(|(name, schema)| {
-                let dirname = provider_dir.join("resource");
-                write_jsonnet(&dirname, name, &schema.block.to_jsonnet(name, "resource"));
-                write_import_file(dirname).unwrap();
+                write_jsonnet(
+                    &resource_dirname,
+                    name,
+                    &schema.block.to_jsonnet(name, "resource"),
+                );
             });
+            let _ = write_import_file(&resource_dirname);
+            let _ = write_import_file(&data_dirname);
             write_import_file(provider_dir).unwrap();
         });
     write_import_file(out_dir).unwrap();
