@@ -145,7 +145,7 @@ impl Attribute {
 
     fn to_doc(&self, name: &str) -> String {
         format!(
-            "'#{name}': {{ 'function': {{ help: |||\n {} \n||| }} }},",
+            "'#{name}':: {{ 'function': {{ help: |||\n {} \n||| }} }},",
             self.description.clone().unwrap_or_default()
         )
     }
