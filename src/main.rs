@@ -149,16 +149,14 @@ impl Block {
                 prefix, name
             ));
             {
+                // TODO: Remove duplicate documentation and reference it instead
                 lines.push("fields:: {".to_string());
-                self.attributes
-                    .iter()
-                    .filter(|(_, attr)| !attr.is_argument())
-                    .for_each(|(arg_name, attr)| {
-                        if !attr.description.clone().unwrap_or_default().is_empty() {
-                            lines.push(attr.to_doc(arg_name));
-                        }
-                        lines.push(format!("'{arg_name}'():: refSelf.plain('.{arg_name}'),"));
-                    });
+                self.attributes.iter().for_each(|(arg_name, attr)| {
+                    if !attr.description.clone().unwrap_or_default().is_empty() {
+                        lines.push(attr.to_doc(arg_name));
+                    }
+                    lines.push(format!("'{arg_name}'():: refSelf.plain('.{arg_name}'),"));
+                });
                 lines.push("},".to_string());
             }
 
