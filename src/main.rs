@@ -1,7 +1,7 @@
 use clap::Parser;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fs::{self, File, create_dir_all},
     io::Write,
     path::Path,
@@ -17,18 +17,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderSchemas {
     pub format_version: String,
-    pub provider_schemas: HashMap<String, ProviderSchema>,
+    pub provider_schemas: BTreeMap<String, ProviderSchema>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderSchema {
     pub provider: Option<Schema>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub resource_schemas: HashMap<String, Schema>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub data_source_schemas: HashMap<String, Schema>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub ephemeral_resource_schemas: HashMap<String, Schema>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resource_schemas: BTreeMap<String, Schema>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub data_source_schemas: BTreeMap<String, Schema>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ephemeral_resource_schemas: BTreeMap<String, Schema>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,9 +39,9 @@ pub struct Schema {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub attributes: HashMap<String, Attribute>,
-    pub block_types: Option<HashMap<String, BlockType>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, Attribute>,
+    pub block_types: Option<BTreeMap<String, BlockType>>,
     pub description: Option<String>,
     pub description_kind: Option<String>,
 }
@@ -75,14 +75,14 @@ pub struct BlockType {
 
 #[derive(Debug, Default)]
 pub struct JsonnetStructure {
-    pub providers: HashMap<String, JsonnetComponents>,
+    pub providers: BTreeMap<String, JsonnetComponents>,
 }
 
 #[derive(Debug, Default)]
 pub struct JsonnetComponents {
     // Name: Content
-    pub data: HashMap<String, String>,
-    pub resource: HashMap<String, String>,
+    pub data: BTreeMap<String, String>,
+    pub resource: BTreeMap<String, String>,
 }
 
 fn wrap_tf_type(name: &str, resource_type: &str, tf_name: &str) -> String {
@@ -171,7 +171,7 @@ fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) {
 
 fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {
     let paths = fs::read_dir(dir.as_ref())?;
-    let mut imports: HashMap<String, String> = HashMap::new();
+    let mut imports: BTreeMap<String, String> = BTreeMap::new();
     for path in paths {
         let path = path?;
         if path.path().is_dir() {
