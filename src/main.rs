@@ -218,7 +218,7 @@ fn get_function_string(
     let mut lines = vec![];
     let func_name = format!("with_{name}").to_case(Case::Camel);
     if let Some(help) = help {
-        lines.push(get_doc_string(name, help));
+        lines.push(get_doc_string(&func_name, help));
     }
     lines.push(format!("{func_name}(value):: self {{"));
     lines.push(wrap_tf_type(name, resource_type, tf_name));
