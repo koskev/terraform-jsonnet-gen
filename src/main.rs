@@ -124,10 +124,12 @@ impl Block {
         if let Some(description) = &self.description {
             lines.push(get_doc_string("new", description));
         }
+        lines.push("local outerSelf = self,".to_string());
         lines.push(format!(
             "new({}):: self.functions(terraformName) {{",
             args.join(", ")
         ));
+        lines.push("ref():: outerSelf.ref(terraformName),".to_string());
         lines.push("_type:: 'tf',".to_string());
         lines.push(format!("{resource_type}+: {{"));
         lines.push(format!("{name}+: {{ [terraformName]+: {{"));
