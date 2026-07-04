@@ -1,4 +1,9 @@
 use clap::Parser;
+use grustonnet_config::FormatOptions;
+use jsonnet_bridge::{
+    evaluate_error::EvaluateError,
+    go::{ASTBridge, ASTBridgeImpl},
+};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     collections::BTreeMap,
@@ -195,22 +200,23 @@ impl Attribute {
     }
 }
 
-fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) {
+fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) -> Result<()> {
     let filename = dir.as_ref().join(format!("{name}.libsonnet"));
+    let res = ASTBridgeImpl::format_snippet(
+        filename.to_str().unwrap_or_default().to_string(),
+        value.to_string(),
+        FormatOptions::default().into(),
+    );
+    if !res.error_data.is_empty() {
+        return Err(EvaluateError::from(res.error_data).into());
+    }
+    let formatted = String::from_utf8(res.ast_data).unwrap_or(value.to_string());
+
     let p = Path::new(&filename);
     create_dir_all(p.parent().unwrap()).unwrap();
     let mut file = File::create(p).unwrap();
-    file.write_all(value.as_bytes()).unwrap();
-    Command::new("jsonnetfmt")
-        .arg("-i")
-        .arg(&filename)
-        .output()
-        .unwrap_or_else(|_| {
-            panic!(
-                "Running fmt on file {}",
-                filename.to_str().unwrap_or_default()
-            )
-        });
+    file.write_all(formatted.as_bytes()).unwrap();
+    Ok(())
 }
 
 fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {
@@ -239,8 +245,7 @@ fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {
     }
 
     lines.push("}".to_string());
-    write_jsonnet(dir, "modules", &lines.join("\n"));
-    Ok(())
+    write_jsonnet(dir, "modules", &lines.join("\n"))
 }
 
 #[derive(Parser, Debug)]
@@ -283,18 +288,20 @@ async fn main() -> Result<()> {
     schemas
         .provider_schemas
         .par_iter()
-        .for_each(|(provider_name, schema)| {
+        .try_for_each(|(provider_name, schema)| {
             let provider_name = provider_name.rsplit_once("/").unwrap().1;
             let provider_dir = out_dir.join(provider_name);
-            generate_schemas(&schema.data_source_schemas, &provider_dir, "data");
-            generate_schemas(&schema.resource_schemas, &provider_dir, "resource");
+            generate_schemas(&schema.data_source_schemas, &provider_dir, "data")?;
+            generate_schemas(&schema.resource_schemas, &provider_dir, "resource")?;
             generate_schemas(
                 &schema.ephemeral_resource_schemas,
                 &provider_dir,
                 "ephemeral",
-            );
+            )?;
             write_import_file(provider_dir).unwrap();
-        });
+            Ok::<(), anyhow::Error>(())
+        })
+        .unwrap();
     write_import_file(out_dir).unwrap();
 
     Ok(())
@@ -304,14 +311,15 @@ fn generate_schemas(
     schemas: &BTreeMap<String, Schema>,
     provider_dir: impl AsRef<Path>,
     resource_type: &str,
-) {
+) -> Result<()> {
     let resource_dirname = provider_dir.as_ref().join(resource_type);
-    schemas.iter().for_each(|(name, schema)| {
+    for (name, schema) in schemas {
         write_jsonnet(
             &resource_dirname,
             name,
             &schema.block.to_jsonnet(name, resource_type),
-        );
-    });
+        )?;
+    }
     let _ = write_import_file(&resource_dirname);
+    Ok(())
 }

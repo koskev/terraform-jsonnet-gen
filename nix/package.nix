@@ -26,7 +26,6 @@
           name = "terraform-jsonnet-gen";
           runtimeInputs = with pkgs; [
             rustPackage
-            go-jsonnet
             opentofu
           ];
           text = ''
