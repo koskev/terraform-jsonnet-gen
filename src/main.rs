@@ -1,9 +1,4 @@
 use clap::Parser;
-use grustonnet_config::FormatOptions;
-use jsonnet_bridge::{
-    evaluate_error::EvaluateError,
-    go::{ASTBridge, ASTBridgeImpl},
-};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     collections::BTreeMap,
@@ -218,19 +213,52 @@ fn get_doc_string(name: &str, help: &str) -> String {
     )
 }
 
+fn format_jsonnet(data: &str) -> Result<String> {
+    #[cfg(feature = "integrate_jsonnetfmt")]
+    {
+        use grustonnet_config::FormatOptions;
+        use jsonnet_bridge::{
+            evaluate_error::EvaluateError,
+            go::{ASTBridge, ASTBridgeImpl},
+        };
+        let res = ASTBridgeImpl::format_snippet(
+            "".to_string(),
+            data.to_string(),
+            FormatOptions::default().into(),
+        );
+        let formatted = if !res.error_data.is_empty() {
+            //value.to_string()
+            return Err(EvaluateError::from(res.error_data).into());
+        } else {
+            String::from_utf8(res.ast_data)?
+        };
+        Ok(formatted)
+    }
+    #[cfg(not(feature = "integrate_jsonnetfmt"))]
+    {
+        use std::process::{Command, Stdio};
+
+        let mut fmt_process = Command::new("jsonnetfmt")
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let mut stdin = fmt_process
+            .stdin
+            .take()
+            .ok_or(anyhow!("Unable to pipe to stdin!"))?;
+
+        stdin.write_all(data.as_bytes())?;
+        drop(stdin);
+        let output = fmt_process.wait_with_output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+}
+
 fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) -> Result<()> {
     let filename = dir.as_ref().join(format!("{name}.libsonnet"));
-    let res = ASTBridgeImpl::format_snippet(
-        filename.to_str().unwrap_or_default().to_string(),
-        value.to_string(),
-        FormatOptions::default().into(),
-    );
-    let formatted = if !res.error_data.is_empty() {
-        //value.to_string()
-        return Err(EvaluateError::from(res.error_data).into());
-    } else {
-        String::from_utf8(res.ast_data).unwrap_or(value.to_string())
-    };
+    let formatted = format_jsonnet(value).unwrap_or(value.to_string());
 
     let p = Path::new(&filename);
     create_dir_all(p.parent().ok_or(PathError::InvalidParent)?)?;
