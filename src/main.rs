@@ -14,6 +14,10 @@ use anyhow::{Result, anyhow};
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 
+use crate::jsonnet::JsonnetRenderer;
+
+mod jsonnet;
+
 #[derive(Error, Debug)]
 pub enum PathError {
     #[error("No parent")]
@@ -112,7 +116,7 @@ fn wrap_tf_type_named(
 
 impl Block {
     fn to_jsonnet(&self, name: &str, resource_type: &str) -> String {
-        let mut lines = vec![];
+        let mut renderer = JsonnetRenderer::new();
         let mut args = vec!["terraformName".to_string()];
         let required: Vec<String> = self
             .attributes
@@ -120,26 +124,26 @@ impl Block {
             .filter_map(|(name, attr)| attr.required.and(Some(name.to_string())))
             .collect();
         args.extend(required.clone());
-        lines.push("{".to_string());
+        renderer.add_line("{");
         if let Some(description) = &self.description {
-            lines.push(get_doc_string("new", description));
+            renderer.add_doc_string("new", description);
         }
-        lines.push("local outerSelf = self,".to_string());
-        lines.push(format!(
+        renderer.add_line("local outerSelf = self,");
+        renderer.add_line(format!(
             "new({}):: self.functions(terraformName) {{",
             args.join(", ")
         ));
-        lines.push("ref():: outerSelf.ref(terraformName),".to_string());
-        lines.push("_type:: 'tf',".to_string());
-        lines.push(format!("{resource_type}+: {{"));
-        lines.push(format!("{name}+: {{ [terraformName]+: {{"));
+        renderer.add_line("ref():: outerSelf.ref(terraformName),");
+        renderer.add_line("_type:: 'tf',");
+        renderer.add_line(format!("{resource_type}+: {{"));
+        renderer.add_line(format!("{name}+: {{ [terraformName]+: {{"));
         for arg in required {
-            lines.push(format!("'{arg}': {arg},"));
+            renderer.add_line(format!("'{arg}': {arg},"));
         }
-        lines.push("},".to_string());
-        lines.push("}}},".to_string());
+        renderer.add_line("},");
+        renderer.add_line("}}},");
         {
-            lines.push("functions(terraformName):: {".to_string());
+            renderer.add_line("functions(terraformName):: {");
             // https://developer.hashicorp.com/terraform/language/meta-arguments
             let meta_arguments = vec![
                 "for_each",
@@ -150,90 +154,60 @@ impl Block {
                 "providers",
             ];
             for meta_arg in meta_arguments {
-                lines.push(get_function_string(meta_arg, resource_type, name, None));
+                renderer.add_with_function(meta_arg, resource_type, name, None);
             }
 
             self.attributes
                 .iter()
                 .filter(|(_, attr)| attr.is_argument())
                 .for_each(|(arg_name, attr)| {
-                    lines.push(attr.to_jsonnet(arg_name, resource_type, name));
+                    renderer.add_with_function(
+                        arg_name,
+                        resource_type,
+                        name,
+                        attr.description.as_deref(),
+                    );
                 });
-            lines.push("},".to_string());
+            renderer.add_line("},");
         }
         {
-            lines.push("ref(terraformName):: {".to_string());
+            renderer.add_line("ref(terraformName):: {");
             let prefix = match resource_type {
                 "data" => "data.",
                 _ => "",
             };
 
-            lines.push("local refSelf = self,".to_string());
-            lines.push(format!(
+            renderer.add_line("local refSelf = self,");
+            renderer.add_line(format!(
                 "plain(suffix=''):: '${{ {}{}.%s%s }}' % [terraformName, suffix],",
                 prefix, name
             ));
             {
                 // TODO: Remove duplicate documentation and reference it instead
-                lines.push("fields:: {".to_string());
+                renderer.add_line("fields:: {");
                 self.attributes.iter().for_each(|(arg_name, attr)| {
-                    if !attr.description.clone().unwrap_or_default().is_empty() {
-                        lines.push(attr.to_doc(arg_name));
+                    if let Some(help) = &attr.description {
+                        renderer.add_doc_string(arg_name, help);
                     }
-                    lines.push(format!(
+                    renderer.add_line(format!(
                         "'{arg_name}'(suffix=''):: refSelf.plain('.{arg_name}%s' % suffix),"
                     ));
                 });
-                lines.push("},".to_string());
+                renderer.add_line("},");
             }
 
-            lines.push("},".to_string());
+            renderer.add_line("},");
         }
 
-        lines.push("}".to_string());
-        lines.join("\n")
+        renderer.add_line("}");
+        renderer.render()
     }
 }
 
 impl Attribute {
-    fn to_jsonnet(&self, name: &str, resource_type: &str, tf_name: &str) -> String {
-        get_function_string(name, resource_type, tf_name, self.description.as_deref())
-    }
-
-    fn to_doc(&self, name: &str) -> String {
-        get_doc_string(name, &self.description.clone().unwrap_or_default())
-    }
-
     fn is_argument(&self) -> bool {
         self.optional.unwrap_or(false) || self.required.unwrap_or(false)
     }
-}
-
-fn get_function_string(
-    name: &str,
-    resource_type: &str,
-    tf_name: &str,
-    help: Option<&str>,
-) -> String {
-    let mut lines = vec![];
-    let func_name = format!("with_{name}").to_case(Case::Camel);
-    if let Some(help) = help {
-        lines.push(get_doc_string(&func_name, help));
-    }
-    lines.push(format!("{func_name}(value):: self {{"));
-    lines.push(wrap_tf_type(name, resource_type, tf_name));
-    lines.push("},".to_string());
-    lines.join("\n")
-}
-
-fn get_doc_string(name: &str, help: &str) -> String {
-    format!(
-        "'#{name}':: {{ 'function': {{ help: |||\n{}\n||| }} }},",
-        help.lines()
-            .map(|line| { format!("  {line}") })
-            .collect::<Vec<_>>()
-            .join("\n")
-    )
 }
 
 fn format_jsonnet(data: &str) -> Result<String> {
@@ -321,14 +295,14 @@ fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {
             }
         }
     }
-    let mut lines = vec![];
-    lines.push("{".to_string());
+    let mut renderer = JsonnetRenderer::new();
+    renderer.add_line("{");
     for (filename, name) in imports {
-        lines.push(format!("  {}:: (import '{}'),", name, filename,));
+        renderer.add_line(format!("  {}:: (import '{}'),", name, filename,));
     }
 
-    lines.push("}".to_string());
-    write_jsonnet(dir, "modules", &lines.join("\n"))
+    renderer.add_line("}");
+    write_jsonnet(dir, "modules", &renderer.render())
 }
 
 #[derive(Parser, Debug)]
