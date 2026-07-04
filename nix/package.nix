@@ -27,6 +27,7 @@
           runtimeInputs = with pkgs; [
             rustPackage
             opentofu
+            go-jsonnet
           ];
           text = ''
             ${lib.getExe rustPackage} "$@"
