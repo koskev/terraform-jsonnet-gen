@@ -209,7 +209,13 @@ impl Attribute {
 }
 
 fn get_doc_string(name: &str, help: &str) -> String {
-    format!("'#{name}':: {{ 'function': {{ help: |||\n {help} \n||| }} }},",)
+    format!(
+        "'#{name}':: {{ 'function': {{ help: |||\n{}\n||| }} }},",
+        help.lines()
+            .map(|line| { format!("  {line}") })
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
 }
 
 fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) -> Result<()> {
@@ -219,10 +225,12 @@ fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) -> Result<()> {
         value.to_string(),
         FormatOptions::default().into(),
     );
-    if !res.error_data.is_empty() {
+    let formatted = if !res.error_data.is_empty() {
+        //value.to_string()
         return Err(EvaluateError::from(res.error_data).into());
-    }
-    let formatted = String::from_utf8(res.ast_data).unwrap_or(value.to_string());
+    } else {
+        String::from_utf8(res.ast_data).unwrap_or(value.to_string())
+    };
 
     let p = Path::new(&filename);
     create_dir_all(p.parent().ok_or(PathError::InvalidParent)?)?;
