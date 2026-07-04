@@ -126,6 +126,9 @@ impl Block {
             .collect();
         args.extend(required.clone());
         lines.push("{".to_string());
+        if let Some(description) = &self.description {
+            lines.push(get_doc_string("new", description));
+        }
         lines.push(format!(
             "new({}):: self.functions(terraformName) {{",
             args.join(", ")
@@ -197,15 +200,16 @@ impl Attribute {
     }
 
     fn to_doc(&self, name: &str) -> String {
-        format!(
-            "'#{name}':: {{ 'function': {{ help: |||\n {} \n||| }} }},",
-            self.description.clone().unwrap_or_default()
-        )
+        get_doc_string(name, &self.description.clone().unwrap_or_default())
     }
 
     fn is_argument(&self) -> bool {
         self.optional.unwrap_or(false) || self.required.unwrap_or(false)
     }
+}
+
+fn get_doc_string(name: &str, help: &str) -> String {
+    format!("'#{name}':: {{ 'function': {{ help: |||\n {help} \n||| }} }},",)
 }
 
 fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) -> Result<()> {
