@@ -286,26 +286,32 @@ async fn main() -> Result<()> {
         .for_each(|(provider_name, schema)| {
             let provider_name = provider_name.rsplit_once("/").unwrap().1;
             let provider_dir = out_dir.join(provider_name);
-            let data_dirname = provider_dir.join("data");
-            let resource_dirname = provider_dir.join("resource");
-            schema
-                .data_source_schemas
-                .iter()
-                .for_each(|(name, schema)| {
-                    write_jsonnet(&data_dirname, name, &schema.block.to_jsonnet(name, "data"));
-                });
-            schema.resource_schemas.iter().for_each(|(name, schema)| {
-                write_jsonnet(
-                    &resource_dirname,
-                    name,
-                    &schema.block.to_jsonnet(name, "resource"),
-                );
-            });
-            let _ = write_import_file(&resource_dirname);
-            let _ = write_import_file(&data_dirname);
+            generate_schemas(&schema.data_source_schemas, &provider_dir, "data");
+            generate_schemas(&schema.resource_schemas, &provider_dir, "resource");
+            generate_schemas(
+                &schema.ephemeral_resource_schemas,
+                &provider_dir,
+                "ephemeral",
+            );
             write_import_file(provider_dir).unwrap();
         });
     write_import_file(out_dir).unwrap();
 
     Ok(())
+}
+
+fn generate_schemas(
+    schemas: &BTreeMap<String, Schema>,
+    provider_dir: impl AsRef<Path>,
+    resource_type: &str,
+) {
+    let resource_dirname = provider_dir.as_ref().join(resource_type);
+    schemas.iter().for_each(|(name, schema)| {
+        write_jsonnet(
+            &resource_dirname,
+            name,
+            &schema.block.to_jsonnet(name, resource_type),
+        );
+    });
+    let _ = write_import_file(&resource_dirname);
 }
