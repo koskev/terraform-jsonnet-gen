@@ -11,9 +11,9 @@
       ...
     }:
     let
-      naersk' = pkgs.callPackage inputs.naersk { };
+      craneLib = inputs.crane.mkLib pkgs;
 
-      rustPackage = naersk'.buildPackage rec {
+      rustPackage = craneLib.buildPackage rec {
         name = "terraform-jsonnet-gen";
         meta.mainProgram = name;
         src = self;
