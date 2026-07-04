@@ -1664,6 +1664,7 @@ dependencies = [
  "serde",
  "serde_json",
  "terraform-wrapper",
+ "thiserror",
  "tokio",
  "which",
 ]

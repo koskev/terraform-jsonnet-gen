@@ -10,14 +10,22 @@ use std::{
     fs::{self, File, create_dir_all},
     io::Write,
     path::Path,
-    process::Command,
 };
 use terraform_wrapper::{Terraform, TerraformCommand, prelude::ProvidersCommand};
+use thiserror::Error;
 use which::which;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug)]
+pub enum PathError {
+    #[error("No parent")]
+    InvalidParent,
+    #[error("Invalid name to convert to string")]
+    StringConversion,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProviderSchemas {
@@ -213,9 +221,9 @@ fn write_jsonnet(dir: impl AsRef<Path>, name: &str, value: &str) -> Result<()> {
     let formatted = String::from_utf8(res.ast_data).unwrap_or(value.to_string());
 
     let p = Path::new(&filename);
-    create_dir_all(p.parent().unwrap()).unwrap();
-    let mut file = File::create(p).unwrap();
-    file.write_all(formatted.as_bytes()).unwrap();
+    create_dir_all(p.parent().ok_or(PathError::InvalidParent)?)?;
+    let mut file = File::create(p)?;
+    file.write_all(formatted.as_bytes())?;
     Ok(())
 }
 
@@ -226,14 +234,26 @@ fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {
         let path = path?;
         if path.path().is_dir() {
             let sub_module_file = path.path().join("modules.libsonnet");
-            let dirname = path.file_name().to_str().unwrap().to_string();
+            let dirname = path
+                .file_name()
+                .to_str()
+                .ok_or(PathError::StringConversion)?
+                .to_string();
             if sub_module_file.exists() {
                 imports.insert(format!("{dirname}/modules.libsonnet"), dirname);
             }
         } else {
-            let filename = path.file_name().to_str().unwrap().to_string();
+            let filename = path
+                .file_name()
+                .to_str()
+                .ok_or(PathError::StringConversion)?
+                .to_string();
             if filename != "modules.libsonnet" {
-                let name = filename.rsplit_once(".").unwrap().0.to_case(Case::Camel);
+                let name = filename
+                    .rsplit_once(".")
+                    .ok_or(anyhow!("Unable to split {filename} at ."))?
+                    .0
+                    .to_case(Case::Camel);
                 imports.insert(filename, name);
             }
         }
@@ -289,7 +309,10 @@ async fn main() -> Result<()> {
         .provider_schemas
         .par_iter()
         .try_for_each(|(provider_name, schema)| {
-            let provider_name = provider_name.rsplit_once("/").unwrap().1;
+            let provider_name = provider_name
+                .rsplit_once("/")
+                .ok_or(anyhow!("Unable to split provider name {}", provider_name))?
+                .1;
             let provider_dir = out_dir.join(provider_name);
             generate_schemas(&schema.data_source_schemas, &provider_dir, "data")?;
             generate_schemas(&schema.resource_schemas, &provider_dir, "resource")?;
@@ -298,11 +321,10 @@ async fn main() -> Result<()> {
                 &provider_dir,
                 "ephemeral",
             )?;
-            write_import_file(provider_dir).unwrap();
+            write_import_file(provider_dir)?;
             Ok::<(), anyhow::Error>(())
-        })
-        .unwrap();
-    write_import_file(out_dir).unwrap();
+        })?;
+    write_import_file(out_dir)?;
 
     Ok(())
 }

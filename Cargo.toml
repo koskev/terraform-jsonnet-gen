@@ -3,6 +3,9 @@ name = "terraform-jsonnet-gen"
 version = "0.1.0"
 edition = "2024"
 
+[lints.clippy]
+unwrap_used = "warn"
+
 [dependencies]
 anyhow = "1.0.103"
 clap = { version = "4.6.1", features = ["derive"] }
@@ -13,5 +16,6 @@ rayon = "1.12.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 terraform-wrapper = "0.4.0"
+thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "net"] }
 which = "8.0.4"
