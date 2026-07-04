@@ -140,6 +140,18 @@ impl Block {
         lines.push("}}},".to_string());
         {
             lines.push("functions(terraformName):: {".to_string());
+            // https://developer.hashicorp.com/terraform/language/meta-arguments
+            let meta_arguments = vec![
+                "for_each",
+                "depends_on",
+                "count",
+                "lifecycle",
+                "provider",
+                "providers",
+            ];
+            for meta_arg in meta_arguments {
+                lines.push(get_function_string(meta_arg, resource_type, name, None));
+            }
 
             self.attributes
                 .iter()
@@ -185,15 +197,7 @@ impl Block {
 
 impl Attribute {
     fn to_jsonnet(&self, name: &str, resource_type: &str, tf_name: &str) -> String {
-        let mut lines = vec![];
-        let func_name = format!("with_{name}").to_case(Case::Camel);
-        if !self.description.clone().unwrap_or_default().is_empty() {
-            lines.push(self.to_doc(&func_name));
-        }
-        lines.push(format!("{func_name}(value):: self {{"));
-        lines.push(wrap_tf_type(name, resource_type, tf_name));
-        lines.push("},".to_string());
-        lines.join("\n")
+        get_function_string(name, resource_type, tf_name, self.description.as_deref())
     }
 
     fn to_doc(&self, name: &str) -> String {
@@ -203,6 +207,23 @@ impl Attribute {
     fn is_argument(&self) -> bool {
         self.optional.unwrap_or(false) || self.required.unwrap_or(false)
     }
+}
+
+fn get_function_string(
+    name: &str,
+    resource_type: &str,
+    tf_name: &str,
+    help: Option<&str>,
+) -> String {
+    let mut lines = vec![];
+    let func_name = format!("with_{name}").to_case(Case::Camel);
+    if let Some(help) = help {
+        lines.push(get_doc_string(name, help));
+    }
+    lines.push(format!("{func_name}(value):: self {{"));
+    lines.push(wrap_tf_type(name, resource_type, tf_name));
+    lines.push("},".to_string());
+    lines.join("\n")
 }
 
 fn get_doc_string(name: &str, help: &str) -> String {
