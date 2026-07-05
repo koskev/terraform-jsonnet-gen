@@ -116,24 +116,23 @@ fn wrap_tf_type_named(
 }
 
 impl Block {
-    fn to_jsonnet(&self, name: &str, resource_type: &str) -> String {
-        let mut object = Object::default();
-        let mut args = vec!["terraformName".to_string()];
-        let required: Vec<String> = self
-            .attributes
-            .iter()
-            .filter_map(|(name, attr)| attr.required.and(Some(name.to_string())))
-            .collect();
-        args.extend(required.clone());
-        object.locals.push(Local {
-            name: "outerSelf".to_string(),
-            body: Child::Code("self".to_string()),
-        });
-        if let Some(description) = &self.description {
-            object.add_doc_string("new", description);
-        }
+    fn add_constructor(&self, name: &str, resource_type: &str, object: &mut Object) {
         {
             let mut new_object = Object::new();
+            let mut args = vec!["terraformName".to_string()];
+            let required: Vec<String> = self
+                .attributes
+                .iter()
+                .filter_map(|(name, attr)| attr.required.and(Some(name.to_string())))
+                .collect();
+            args.extend(required.clone());
+            object.locals.push(Local {
+                name: "outerSelf".to_string(),
+                body: Child::Code("self".to_string()),
+            });
+            if let Some(description) = &self.description {
+                object.add_doc_string("new", description);
+            }
             new_object.add_string_field("_type", "tf");
             new_object.add_code_field("ref()", "outerSelf.ref(terraformName)");
             new_object.add_line(format!("{resource_type}+: {{"));
@@ -149,73 +148,82 @@ impl Block {
                     + Child::Object(new_object),
             );
         }
-        {
-            let mut functions_object = Object::new();
-            // https://developer.hashicorp.com/terraform/language/meta-arguments
-            let meta_arguments = vec![
-                "for_each",
-                "depends_on",
-                "count",
-                "lifecycle",
-                "provider",
-                "providers",
-            ];
-            for meta_arg in meta_arguments {
-                functions_object.add_with_function(meta_arg, resource_type, name, None);
-            }
+    }
 
-            self.attributes
-                .iter()
-                .filter(|(_, attr)| attr.is_argument())
-                .for_each(|(arg_name, attr)| {
-                    functions_object.add_with_function(
-                        arg_name,
-                        resource_type,
-                        name,
-                        attr.description.as_deref(),
-                    );
-                });
-            object.fields.insert(
-                "functions(terraformName)".to_string(),
-                Child::Object(functions_object),
-            );
+    fn add_functions(&self, name: &str, resource_type: &str, object: &mut Object) {
+        let mut functions_object = Object::new();
+        // https://developer.hashicorp.com/terraform/language/meta-arguments
+        let meta_arguments = vec![
+            "for_each",
+            "depends_on",
+            "count",
+            "lifecycle",
+            "provider",
+            "providers",
+        ];
+        for meta_arg in meta_arguments {
+            functions_object.add_with_function(meta_arg, resource_type, name, None);
         }
-        {
-            let mut ref_object = Object::new();
-            let prefix = match resource_type {
-                "data" => "data.",
-                _ => "",
-            };
 
-            ref_object.locals.push(Local {
-                name: "refSelf".to_string(),
-                body: Child::Code("self".to_string()),
+        self.attributes
+            .iter()
+            .filter(|(_, attr)| attr.is_argument())
+            .for_each(|(arg_name, attr)| {
+                functions_object.add_with_function(
+                    arg_name,
+                    resource_type,
+                    name,
+                    attr.description.as_deref(),
+                );
             });
-            ref_object.add_code_field(
-                "plain(suffix='')",
-                format!("'${{ {}{}.%s%s }}' % [terraformName, suffix]", prefix, name),
-            );
-            {
-                let mut field_object = Object::new();
-                // TODO: Remove duplicate documentation and reference it instead
-                self.attributes.iter().for_each(|(arg_name, attr)| {
-                    if let Some(help) = &attr.description {
-                        field_object.add_doc_string(arg_name, help);
-                    }
-                    field_object.add_code_field(
-                        format!("'{arg_name}'(suffix='')"),
-                        format!("refSelf.plain('.{arg_name}%s' % suffix)"),
-                    );
-                });
-                ref_object
-                    .fields
-                    .insert("fields".to_string(), Child::Object(field_object));
-            }
+        object.fields.insert(
+            "functions(terraformName)".to_string(),
+            Child::Object(functions_object),
+        );
+    }
 
-            object
+    fn add_ref(&self, name: &str, resource_type: &str, object: &mut Object) {
+        let mut ref_object = Object::new();
+        let prefix = match resource_type {
+            "data" => "data.",
+            _ => "",
+        };
+
+        ref_object.locals.push(Local {
+            name: "refSelf".to_string(),
+            body: Child::Code("self".to_string()),
+        });
+        ref_object.add_code_field(
+            "plain(suffix='')",
+            format!("'${{ {}{}.%s%s }}' % [terraformName, suffix]", prefix, name),
+        );
+        {
+            let mut field_object = Object::new();
+            // TODO: Remove duplicate documentation and reference it instead
+            self.attributes.iter().for_each(|(arg_name, attr)| {
+                if let Some(help) = &attr.description {
+                    field_object.add_doc_string(arg_name, help);
+                }
+                field_object.add_code_field(
+                    format!("'{arg_name}'(suffix='')"),
+                    format!("refSelf.plain('.{arg_name}%s' % suffix)"),
+                );
+            });
+            ref_object
                 .fields
-                .insert("ref(terraformName)".to_string(), Child::Object(ref_object));
+                .insert("fields".to_string(), Child::Object(field_object));
         }
+
+        object
+            .fields
+            .insert("ref(terraformName)".to_string(), Child::Object(ref_object));
+    }
+
+    fn to_jsonnet(&self, name: &str, resource_type: &str) -> String {
+        let mut object = Object::default();
+        self.add_constructor(name, resource_type, &mut object);
+        self.add_functions(name, resource_type, &mut object);
+        self.add_ref(name, resource_type, &mut object);
 
         object.to_string()
     }
