@@ -17,8 +17,10 @@ integrate_jsonnetfmt = [
 anyhow = "1.0.103"
 clap = { version = "4.6.1", features = ["derive"] }
 convert_case = "0.11.0"
+derive_more = { version = "2.1.1", features = ["display"] }
 grustonnet-config = { git = "https://github.com/koskev/grustonnet-ls/", version = "0.1.0", optional = true}
 jsonnet-bridge = { git = "https://github.com/koskev/grustonnet-ls/", version = "0.1.0", optional = true }
+ordermap = "1.2.0"
 rayon = "1.12.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
