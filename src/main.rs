@@ -14,7 +14,7 @@ use anyhow::{Result, anyhow};
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 
-use crate::jsonnet::{Binary, Child, JsonnetRenderer, Local, Object};
+use crate::jsonnet::{Child, JsonnetRenderer, Local, Object};
 
 mod jsonnet;
 
@@ -142,7 +142,7 @@ impl Block {
             }
             new_object.add_line("},");
             new_object.add_line("},},");
-            object.fields.insert(
+            object.add_child_field(
                 format!("new({})", args.join(", ")),
                 Child::Code("self.functions(terraformName)".to_string())
                     + Child::Object(new_object),
@@ -176,7 +176,7 @@ impl Block {
                     attr.description.as_deref(),
                 );
             });
-        object.fields.insert(
+        object.add_child_field(
             "functions(terraformName)".to_string(),
             Child::Object(functions_object),
         );
@@ -209,14 +209,10 @@ impl Block {
                     format!("refSelf.plain('.{arg_name}%s' % suffix)"),
                 );
             });
-            ref_object
-                .fields
-                .insert("fields".to_string(), Child::Object(field_object));
+            ref_object.add_child_field("fields".to_string(), Child::Object(field_object));
         }
 
-        object
-            .fields
-            .insert("ref(terraformName)".to_string(), Child::Object(ref_object));
+        object.add_child_field("ref(terraformName)".to_string(), Child::Object(ref_object));
     }
 
     fn to_jsonnet(&self, name: &str, resource_type: &str) -> String {

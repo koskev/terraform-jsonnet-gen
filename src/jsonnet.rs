@@ -1,12 +1,10 @@
 use std::{
-    collections::BTreeMap,
     fmt::{self, Display},
     ops,
 };
 
 use convert_case::{Case, Casing};
 use derive_more::Display;
-use ordermap::OrderMap;
 
 use crate::wrap_tf_type;
 
@@ -68,10 +66,80 @@ impl Display for Local {
 pub struct Object {
     pub locals: Vec<Local>,
     pub asserts: Vec<String>,
-    pub fields: OrderMap<String, Child>,
+    pub fields: Vec<ObjectEntry>,
 
     /// Additional lines
     pub lines: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct ObjectEntry {
+    pub field: ObjectField,
+    pub hidden: bool,
+    pub body: Child,
+}
+
+impl Display for ObjectEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{},",
+            self.field,
+            if self.hidden { "::" } else { ":" },
+            self.body
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Function {
+    pub name: String,
+    pub args: Vec<FunctionArg>,
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.name,
+            self.args
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct FunctionArg {
+    pub name: String,
+    pub default: Option<Child>,
+}
+
+impl Display for FunctionArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            self.name,
+            if let Some(child) = &self.default {
+                child.to_string()
+            } else {
+                "".to_string()
+            }
+        )
+    }
+}
+
+#[derive(Debug, Default, Display)]
+pub enum ObjectField {
+    Plain(String),
+    Function(Function),
+
+    #[default]
+    Invalid,
 }
 
 impl Display for Object {
@@ -80,8 +148,8 @@ impl Display for Object {
         for local in &self.locals {
             writeln!(f, "{local},")?;
         }
-        for (field_name, field_content) in &self.fields {
-            writeln!(f, "{field_name}:: {field_content},")?;
+        for field in &self.fields {
+            writeln!(f, "{field}")?;
         }
 
         writeln!(f, "{}", self.lines.join("\n"))?;
@@ -102,23 +170,30 @@ impl Object {
     }
 
     pub fn add_code_field(&mut self, name: impl Into<String>, val: impl Into<String>) {
-        self.fields.insert(name.into(), Child::Code(val.into()));
+        self.add_child_field(name, Child::Code(val.into()));
     }
 
     pub fn add_string_field(&mut self, name: impl Into<String>, val: impl Into<String>) {
-        self.fields.insert(name.into(), Child::String(val.into()));
+        self.add_child_field(name, Child::String(val.into()));
+    }
+    pub fn add_child_field(&mut self, name: impl Into<String>, val: Child) {
+        self.fields.push(ObjectEntry {
+            field: ObjectField::Plain(name.into()),
+            body: val,
+            hidden: true,
+        });
     }
 
     pub fn add_doc_string(&mut self, name: &str, help: &str) {
-        self.fields.insert(
+        self.add_code_field(
             format!("'#{name}'"),
-            Child::Code(format!(
+            format!(
                 "{{ 'function': {{ help: |||\n{}\n|||\n }} }}",
                 help.lines()
                     .map(|line| { format!("  {line}") })
                     .collect::<Vec<_>>()
                     .join("\n")
-            )),
+            ),
         );
     }
 
@@ -133,12 +208,9 @@ impl Object {
         if let Some(help) = help {
             self.add_doc_string(&func_name, help);
         }
-        self.fields.insert(
+        self.add_code_field(
             format!("{func_name}(value)"),
-            Child::Code(format!(
-                "self {{ {} }}",
-                wrap_tf_type(name, resource_type, tf_name)
-            )),
+            format!("self {{ {} }}", wrap_tf_type(name, resource_type, tf_name)),
         );
     }
 }
