@@ -52,6 +52,4 @@ jobs:
         docker manifest push "${{ env.IMAGE }}:${GITHUB_REF_NAME//\//-}"
 name: Publish docker image
 'on':
-  push:
-    tags:
-    - '*'
+  push: {}

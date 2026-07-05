@@ -10,7 +10,11 @@
       };
     };
     workflows = {
-      ".github/workflows/docker-publish.yaml" = inputs.nix-actions.lib.mkDocker { };
+      ".github/workflows/docker-publish.yaml" = inputs.nix-actions.lib.mkDocker {
+        onConfig = {
+          push = { };
+        };
+      };
     };
   };
 }
