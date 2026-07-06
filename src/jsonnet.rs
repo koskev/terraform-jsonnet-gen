@@ -6,7 +6,26 @@ use std::{
 use convert_case::{Case, Casing};
 use derive_more::Display;
 
-use crate::wrap_tf_type;
+fn wrap_tf_type(name: &str, resource_type: Option<&str>, tf_name: &str) -> String {
+    wrap_tf_type_named(name, resource_type, tf_name, "value")
+}
+
+fn wrap_tf_type_named(
+    name: &str,
+    resource_type: Option<&str>,
+    tf_resource_name: &str,
+    val_var_name: &str,
+) -> String {
+    if let Some(resource_type) = resource_type {
+        format!(
+            r#"'{resource_type}'+: {{
+            '{tf_resource_name}'+: {{ [terraformName]+: {{ '{name}': {val_var_name} }} }},
+        }},"#
+        )
+    } else {
+        format!(r#"'{tf_resource_name}'+: {{ '{name}': {val_var_name} }},"#)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct JsonnetRenderer {
@@ -101,7 +120,7 @@ impl Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}({})",
+            "'{}'({})",
             self.name,
             self.args
                 .iter()
@@ -125,7 +144,7 @@ impl Display for FunctionArg {
             "{}{}",
             self.name,
             if let Some(child) = &self.default {
-                child.to_string()
+                format!("={}", child)
             } else {
                 "".to_string()
             }
@@ -135,6 +154,7 @@ impl Display for FunctionArg {
 
 #[derive(Debug, Default, Display)]
 pub enum ObjectField {
+    #[display("'{_0}'")]
     Plain(String),
     Function(Function),
 
@@ -186,9 +206,9 @@ impl Object {
 
     pub fn add_doc_string(&mut self, name: &str, help: &str) {
         self.add_code_field(
-            format!("'#{name}'"),
+            format!("#{name}"),
             format!(
-                "{{ 'function': {{ help: |||\n{}\n|||\n }} }}",
+                "{{ 'function': {{ help: \n|||\n{}\n|||\n }} }}",
                 help.lines()
                     .map(|line| { format!("  {line}") })
                     .collect::<Vec<_>>()
@@ -200,7 +220,7 @@ impl Object {
     pub fn add_with_function(
         &mut self,
         name: &str,
-        resource_type: &str,
+        resource_type: Option<&str>,
         tf_name: &str,
         help: Option<&str>,
     ) {
@@ -208,10 +228,21 @@ impl Object {
         if let Some(help) = help {
             self.add_doc_string(&func_name, help);
         }
-        self.add_code_field(
-            format!("{func_name}(value)"),
-            format!("self {{ {} }}", wrap_tf_type(name, resource_type, tf_name)),
-        );
+
+        self.fields.push(ObjectEntry {
+            hidden: true,
+            field: ObjectField::Function(Function {
+                name: func_name,
+                args: vec![FunctionArg {
+                    name: "value".to_string(),
+                    ..Default::default()
+                }],
+            }),
+            body: Child::Code(format!(
+                "self {{ {} }}",
+                wrap_tf_type(name, resource_type, tf_name)
+            )),
+        });
     }
 }
 

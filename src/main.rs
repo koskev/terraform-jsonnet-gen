@@ -14,8 +14,9 @@ use anyhow::{Result, anyhow};
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 
-use crate::jsonnet::{Child, JsonnetRenderer, Local, Object};
-
+use crate::jsonnet::{
+    Child, Function, FunctionArg, JsonnetRenderer, Local, Object, ObjectEntry, ObjectField,
+};
 mod jsonnet;
 
 #[derive(Error, Debug)]
@@ -98,25 +99,8 @@ pub struct JsonnetComponents {
     pub resource: BTreeMap<String, String>,
 }
 
-fn wrap_tf_type(name: &str, resource_type: &str, tf_name: &str) -> String {
-    wrap_tf_type_named(name, resource_type, tf_name, "value")
-}
-
-fn wrap_tf_type_named(
-    name: &str,
-    resource_type: &str,
-    tf_resource_name: &str,
-    val_var_name: &str,
-) -> String {
-    format!(
-        r#"{resource_type}+: {{
-            {tf_resource_name}+: {{ [terraformName]+: {{ '{name}': {val_var_name} }} }},
-        }},"#
-    )
-}
-
 impl Block {
-    fn add_constructor(&self, name: &str, resource_type: &str, object: &mut Object) {
+    fn add_constructor(&self, name: &str, resource_type: Option<&str>, object: &mut Object) {
         {
             let mut new_object = Object::new();
             let mut args = vec!["terraformName".to_string()];
@@ -135,22 +119,38 @@ impl Block {
             }
             new_object.add_string_field("_type", "tf");
             new_object.add_code_field("ref()", "outerSelf.ref(terraformName)");
-            new_object.add_line(format!("{resource_type}+: {{"));
-            new_object.add_line(format!("{name}+: {{ [terraformName]+: {{"));
+            if let Some(resource_type) = resource_type {
+                new_object.add_line(format!("'{resource_type}'+: {{"));
+                new_object.add_line(format!("'{name}'+: {{ [terraformName]+: {{"));
+            } else {
+                new_object.add_line(format!("'{name}'+: {{"));
+            }
             for arg in required {
                 new_object.add_line(format!("'{arg}': {arg},"));
             }
+            if resource_type.is_some() {
+                new_object.add_line("}}");
+            }
             new_object.add_line("},");
-            new_object.add_line("},},");
-            object.add_child_field(
-                format!("new({})", args.join(", ")),
-                Child::Code("self.functions(terraformName)".to_string())
+            object.fields.push(ObjectEntry {
+                hidden: true,
+                field: ObjectField::Function(Function {
+                    name: "new".to_string(),
+                    args: args
+                        .iter()
+                        .map(|arg| FunctionArg {
+                            name: arg.to_string(),
+                            default: None,
+                        })
+                        .collect(),
+                }),
+                body: Child::Code("self.functions(terraformName)".to_string())
                     + Child::Object(new_object),
-            );
+            });
         }
     }
 
-    fn add_functions(&self, name: &str, resource_type: &str, object: &mut Object) {
+    fn add_functions(&self, name: &str, resource_type: Option<&str>, object: &mut Object) {
         let mut functions_object = Object::new();
         // https://developer.hashicorp.com/terraform/language/meta-arguments
         let meta_arguments = vec![
@@ -176,15 +176,22 @@ impl Block {
                     attr.description.as_deref(),
                 );
             });
-        object.add_child_field(
-            "functions(terraformName)".to_string(),
-            Child::Object(functions_object),
-        );
+        object.fields.push(ObjectEntry {
+            hidden: true,
+            field: ObjectField::Function(Function {
+                name: "functions".to_string(),
+                args: vec![FunctionArg {
+                    name: "terraformName".to_string(),
+                    ..Default::default()
+                }],
+            }),
+            body: Child::Object(functions_object),
+        });
     }
 
-    fn add_ref(&self, name: &str, resource_type: &str, object: &mut Object) {
+    fn add_ref(&self, name: &str, resource_type: Option<&str>, object: &mut Object) {
         let mut ref_object = Object::new();
-        let prefix = match resource_type {
+        let prefix = match resource_type.unwrap_or_default() {
             "data" => "data.",
             _ => "",
         };
@@ -193,10 +200,20 @@ impl Block {
             name: "refSelf".to_string(),
             body: Child::Code("self".to_string()),
         });
-        ref_object.add_code_field(
-            "plain(suffix='')",
-            format!("'${{ {}{}.%s%s }}' % [terraformName, suffix]", prefix, name),
-        );
+        ref_object.fields.push(ObjectEntry {
+            hidden: true,
+            field: ObjectField::Function(Function {
+                name: "plain".to_string(),
+                args: vec![FunctionArg {
+                    name: "suffix".to_string(),
+                    default: Some(Child::String("".to_string())),
+                }],
+            }),
+            body: Child::Code(format!(
+                "'${{ {}{}.%s%s }}' % [terraformName, suffix]",
+                prefix, name
+            )),
+        });
         {
             let mut field_object = Object::new();
             // TODO: Remove duplicate documentation and reference it instead
@@ -204,22 +221,60 @@ impl Block {
                 if let Some(help) = &attr.description {
                     field_object.add_doc_string(arg_name, help);
                 }
-                field_object.add_code_field(
-                    format!("'{arg_name}'(suffix='')"),
-                    format!("refSelf.plain('.{arg_name}%s' % suffix)"),
-                );
+                field_object.fields.push(ObjectEntry {
+                    hidden: true,
+                    field: ObjectField::Function(Function {
+                        name: arg_name.to_string(),
+                        args: vec![FunctionArg {
+                            name: "suffix".to_string(),
+                            default: Some(Child::String("".to_string())),
+                        }],
+                    }),
+                    body: Child::Code(format!("refSelf.plain('.{arg_name}%s' % suffix)")),
+                });
             });
             ref_object.add_child_field("fields".to_string(), Child::Object(field_object));
         }
 
-        object.add_child_field("ref(terraformName)".to_string(), Child::Object(ref_object));
+        object.fields.push(ObjectEntry {
+            hidden: true,
+            field: ObjectField::Function(Function {
+                name: "ref".to_string(),
+                args: vec![FunctionArg {
+                    name: "terraformName".to_string(),
+                    default: None,
+                }],
+            }),
+            body: Child::Object(ref_object),
+        });
     }
 
-    fn to_jsonnet(&self, name: &str, resource_type: &str) -> String {
+    fn to_jsonnet(
+        &self,
+        name: &str,
+        resource_type: Option<&str>,
+        render_block_types: bool,
+    ) -> String {
         let mut object = Object::default();
         self.add_constructor(name, resource_type, &mut object);
         self.add_functions(name, resource_type, &mut object);
         self.add_ref(name, resource_type, &mut object);
+
+        if !self.block_types.is_empty() && render_block_types {
+            let mut block_object = Object::new();
+
+            for (block_name, block_type) in &self.block_types {
+                block_object.add_code_field(
+                    block_name.to_string(),
+                    block_type
+                        .block
+                        .to_jsonnet(block_name, None, render_block_types)
+                        .to_string(),
+                );
+            }
+
+            object.add_child_field("block".to_string(), Child::Object(block_object));
+        }
 
         object.to_string()
     }
@@ -341,6 +396,10 @@ struct Args {
 
     #[arg(short, long, default_value = ".")]
     tf_dir: String,
+
+    #[arg(short, long)]
+    // Also render block types. This might make files extremely large!
+    render_block_types: bool,
 }
 
 #[tokio::main]
@@ -372,12 +431,23 @@ async fn main() -> Result<()> {
                 .ok_or(anyhow!("Unable to split provider name {}", provider_name))?
                 .1;
             let provider_dir = out_dir.join(provider_name);
-            generate_schemas(&schema.data_source_schemas, &provider_dir, "data")?;
-            generate_schemas(&schema.resource_schemas, &provider_dir, "resource")?;
+            generate_schemas(
+                &schema.data_source_schemas,
+                &provider_dir,
+                "data",
+                args.render_block_types,
+            )?;
+            generate_schemas(
+                &schema.resource_schemas,
+                &provider_dir,
+                "resource",
+                args.render_block_types,
+            )?;
             generate_schemas(
                 &schema.ephemeral_resource_schemas,
                 &provider_dir,
                 "ephemeral",
+                args.render_block_types,
             )?;
             write_import_file(provider_dir)?;
             Ok::<(), anyhow::Error>(())
@@ -391,13 +461,16 @@ fn generate_schemas(
     schemas: &BTreeMap<String, Schema>,
     provider_dir: impl AsRef<Path>,
     resource_type: &str,
+    render_block_types: bool,
 ) -> Result<()> {
     let resource_dirname = provider_dir.as_ref().join(resource_type);
     for (name, schema) in schemas {
         write_jsonnet(
             &resource_dirname,
             name,
-            &schema.block.to_jsonnet(name, resource_type),
+            &schema
+                .block
+                .to_jsonnet(name, Some(resource_type), render_block_types),
         )?;
     }
     let _ = write_import_file(&resource_dirname);
