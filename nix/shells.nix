@@ -15,6 +15,7 @@ _: {
             rustfmt
             pkg-config
             opentofu
+            go-jsonnet
           ];
           buildInputs = with pkgs; [
             clang
