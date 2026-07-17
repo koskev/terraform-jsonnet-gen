@@ -119,7 +119,14 @@ impl Block {
                 object.add_doc_string("new", description);
             }
             new_object.add_string_field("_type", "tf");
-            new_object.add_code_field("ref()", "outerSelf.ref(terraformName)");
+            new_object.fields.push(ObjectEntry {
+                hidden: true,
+                field: ObjectField::Function(Function {
+                    name: "ref".to_string(),
+                    ..Default::default()
+                }),
+                body: Child::Code("outerSelf.ref(terraformName)".to_string()),
+            });
             if let Some(resource_type) = resource_type {
                 new_object.add_line(format!("'{resource_type}'+: {{"));
                 new_object.add_line(format!("'{name}'+: {{ [terraformName]+: {{"));
