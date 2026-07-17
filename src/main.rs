@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::jsonnet::{
     Child, Function, FunctionArg, JsonnetRenderer, Local, Object, ObjectEntry, ObjectField,
+    wrap_tf_type_outer,
 };
 mod jsonnet;
 
@@ -163,6 +164,28 @@ impl Block {
         ];
         for meta_arg in meta_arguments {
             functions_object.add_with_function(meta_arg, resource_type, name, None);
+        }
+        if let Some(resource_type) = resource_type {
+            functions_object.fields.push(ObjectEntry {
+                hidden: true,
+                field: ObjectField::Function(Function {
+                    name: "addCustomData".to_string(),
+                    args: vec![
+                        FunctionArg {
+                            name: "name".to_string(),
+                            ..Default::default()
+                        },
+                        FunctionArg {
+                            name: "value".to_string(),
+                            ..Default::default()
+                        },
+                    ],
+                }),
+                body: Child::Code(format!(
+                    "self {{ {} }}",
+                    wrap_tf_type_outer(resource_type, name, "{ [name]: value }")
+                )),
+            });
         }
 
         self.attributes

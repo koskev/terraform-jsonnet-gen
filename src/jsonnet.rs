@@ -17,14 +17,22 @@ fn wrap_tf_type_named(
     val_var_name: &str,
 ) -> String {
     if let Some(resource_type) = resource_type {
-        format!(
-            r#"'{resource_type}'+: {{
-            '{tf_resource_name}'+: {{ [terraformName]+: {{ '{name}': {val_var_name} }} }},
-        }},"#
+        wrap_tf_type_outer(
+            resource_type,
+            tf_resource_name,
+            &format!(r#"{{ '{name}': {val_var_name} }}"#),
         )
     } else {
         format!(r#"'{tf_resource_name}'+: {{ '{name}': {val_var_name} }},"#)
     }
+}
+
+pub fn wrap_tf_type_outer(resource_type: &str, tf_resource_name: &str, body: &str) -> String {
+    format!(
+        r#"'{resource_type}'+: {{
+            '{tf_resource_name}'+: {{ [terraformName]+: {body} }},
+        }},"#
+    )
 }
 
 #[derive(Debug, Default)]
