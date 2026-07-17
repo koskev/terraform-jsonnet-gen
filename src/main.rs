@@ -385,7 +385,7 @@ fn write_import_file(dir: impl AsRef<Path>) -> Result<()> {
             if sub_module_file.exists() {
                 imports.insert(format!("{dirname}/modules.libsonnet"), dirname);
             }
-        } else {
+        } else if path.path().extension().unwrap_or_default() == "libsonnet" {
             let filename = path
                 .file_name()
                 .to_str()
