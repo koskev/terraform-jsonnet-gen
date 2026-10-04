@@ -223,6 +223,7 @@ impl Block {
         let mut ref_object = Object::new();
         let prefix = match resource_type.unwrap_or_default() {
             "data" => "data.",
+            "ephemeral" => "ephemeral.",
             _ => "",
         };
 
