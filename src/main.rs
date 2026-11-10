@@ -245,6 +245,14 @@ impl Block {
                 prefix, name
             )),
         });
+        ref_object.fields.push(ObjectEntry {
+            hidden: true,
+            field: ObjectField::Function(Function {
+                name: "name".to_string(),
+                ..Default::default()
+            }),
+            body: Child::Code(format!("'{}{}.%s' % terraformName", prefix, name)),
+        });
         {
             let mut field_object = Object::new();
             // TODO: Remove duplicate documentation and reference it instead
